@@ -122,9 +122,12 @@ int main() {
     TextureAllocator texture_allocator(device, texture_heap, 16);
 
 	TimelinePoint latest_completion{.semaphore = create_timeline_semaphore(device)};
+	Queue* queue = get_queue(device);
+	CommandPool* upload_pool = create_command_pool(device);
+	CommandBuffer* upload_commands = begin_commands(upload_pool);
 
 	// Textures
-	PlacedTexture texture = texture_allocator.allocate({
+	PlacedTexture texture = texture_allocator.allocate(upload_commands, {
 		.extent = {.x = texture_width, .y = texture_height, .z = 1},
 		.format = Format::rgba8_srgb,
 		.usage = TextureUsage::sampled | TextureUsage::transfer_destination,
@@ -138,26 +141,37 @@ int main() {
 		.address_v = AddressMode::clamp_to_edge,
 	});
 
-	CommandBuffer* upload_commands = begin_commands(device);
 	copy_memory_to_texture(upload_commands, gpu_range(upload_allocation), texture.texture);
 
 	barrier(upload_commands,
 		Stage::transfer, Access::transfer_write,
 		Stage::fragment, Access::shader_read);
 
+	end_commands(upload_commands);
 	latest_completion.value++;
-	submit({ upload_commands }, latest_completion);
+	submit(queue, {.commands = {upload_commands}, .completion = latest_completion});
+	wait_timeline(latest_completion);
+	destroy_command_pool(upload_pool);
 
 	PlacedTexture depth{};
 	RenderView* depth_render_view = nullptr;
 	uint32x2 depth_extent{};
 	uint64 frame_index = 0;
+	CommandPool* command_pools[] = {create_command_pool(device), create_command_pool(device)};
 
 	while (pump_example_window(window))
 	{
-        const SwapchainFrame frame = acquire(device);
+        if (latest_completion.value >= 2)
+            wait_timeline({.semaphore = latest_completion.semaphore, .value = latest_completion.value - 1});
+        CommandPool* command_pool = command_pools[latest_completion.value % 2];
+        reset_command_pool(command_pool);
+        CommandBuffer* commands = begin_commands(command_pool);
+        const SwapchainFrame frame = acquire(commands);
         if (!frame.render_view)
+        {
+            reset_command_pool(command_pool);
             continue;
+        }
 
         // Window resize?
         if (frame.extent.x != depth_extent.x || frame.extent.y != depth_extent.y)
@@ -166,7 +180,7 @@ int main() {
 				wait_timeline(latest_completion);
 			destroy_render_view(depth_render_view);
 			texture_allocator.free(depth);
-			depth = texture_allocator.allocate({
+			depth = texture_allocator.allocate(commands, {
 				.extent = {.x = frame.extent.x, .y = frame.extent.y, .z = 1},
 				.format = Format::d32_float,
 				.usage = TextureUsage::depth_stencil_attachment,
@@ -176,7 +190,6 @@ int main() {
 		}
 
 		// Render
-		CommandBuffer* commands = begin_commands(device);
         set_texture_descriptor_heap(commands, gpu_range(texture_descriptor_heap));
         set_sampler_descriptor_heap(commands, gpu_range(sampler_descriptor_heap));
 
@@ -217,13 +230,16 @@ int main() {
 		end_render_pass(commands);
 
         // Submit
+        end_commands(commands);
         latest_completion.value++;
-		submit_and_present(device, {commands}, latest_completion);
+		submit_and_present(queue, {.commands = {commands}, .completion = latest_completion});
 	}
 
-	wait_timeline(latest_completion);
+	wait_idle(device);
 
 	// Cleanup
+	destroy_command_pool(command_pools[1]);
+	destroy_command_pool(command_pools[0]);
 	destroy_timeline_semaphore(latest_completion.semaphore);
     destroy_pso(cube_pso);
 	destroy_render_view(depth_render_view);

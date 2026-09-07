@@ -22,7 +22,7 @@ TextureAllocator::TextureAllocator(Device* device, const TextureHeap& heap, uint
     assert(heap.owner);
 }
 
-PlacedTexture TextureAllocator::allocate(const TextureDesc& desc) noexcept
+PlacedTexture TextureAllocator::allocate(CommandBuffer* commands, const TextureDesc& desc) noexcept
 {
     const SizeAlign size_align = get_texture_size_align(device_, desc);
     const HeapAllocator::Range range = ranges_.allocate(size_align.size);
@@ -30,7 +30,7 @@ PlacedTexture TextureAllocator::allocate(const TextureDesc& desc) noexcept
         return {};
 
     return {
-        .texture = create_texture(device_, desc, heap_, uint64{range.offset} * ranges_.element_size),
+        .texture = create_texture(commands, desc, heap_, uint64{range.offset} * ranges_.element_size),
         .token = range.token,
     };
 }

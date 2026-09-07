@@ -32,7 +32,8 @@
 - Do not use PIMPL interfaces.
 - Avoid standard-library algorithms; prefer straightforward loops.
 - Do not use hash maps or ordered maps.
-- Do not use mutexes or atomics in the graphics API. The API is intentionally single-threaded and is not thread-safe yet. The utility
+- Do not use mutexes or atomics in the graphics API. Queues and command pools are externally synchronized; independent pools, queues,
+  resource creation, and timeline waits can run concurrently. The utility
   `BumpAllocator::allocate_atomic()` is the sole exception: it supports relaxed-atomic reservation of disjoint mapped ranges while allocation
   lifetime and GPU submission remain caller-synchronized.
 - Avoid copying large user data structures. Prefer references to structures, and use spans for array data in structures and function parameters.

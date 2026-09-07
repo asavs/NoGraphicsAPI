@@ -19,6 +19,8 @@ struct uint32x3
 };
 
 struct Device;
+struct Queue;
+struct CommandPool;
 struct Texture;
 struct RenderView;
 struct PSO;
@@ -82,6 +84,13 @@ struct TimelinePoint
 {
     TimelineSemaphore* semaphore = nullptr;
     uint64 value = 0;
+};
+
+struct SubmitDesc
+{
+    Span<CommandBuffer* const> commands = {};
+    Span<const TimelinePoint> waits = {}; // GPU waits cover all command stages.
+    TimelinePoint completion = {};
 };
 
 enum class Format : uint8
@@ -423,6 +432,7 @@ constexpr Access operator|(Access lhs, Access rhs) noexcept
 struct DeviceCaps
 {
     const char* device_name = nullptr;
+    uint32 queue_count = 0; // Distinct queues in one graphics + compute queue family.
     uint64 max_push_data_size = 0;
     // Common element size for suballocating TextureHeap storage; every SizeAlign::align divides this value.
     uint64 texture_heap_alignment = 0;
@@ -433,13 +443,14 @@ struct DeviceCaps
     bool storage_input_output16 = false;
 };
 
-// A windowed device and every call using it must remain on the native
-// window's message-pump thread. The window must outlive the device.
+// Windowed device creation/destruction, drawable queries, acquire, and presentation stay on the window's message-pump thread.
+// The window must outlive the device. Other calls follow the object-level threading contract below.
 struct DeviceDesc
 {
     void* window = nullptr;
     Format swapchain_format = Format::undefined;
     uint32 desired_swapchain_image_count = 2;
+    uint32 desired_queue_count = 1; // Must be nonzero; capped to the selected queue family's available count.
 };
 
 struct DeviceInit
@@ -635,11 +646,16 @@ struct RenderingDesc
 // All resource destruction is immediate. Destroy resources only when no recorded or executing GPU frame uses them.
 // The optional NoGraphicsAPIUtility DeleteQueue can defer destruction until a submitted frame completes.
 // Wait for all submitted frames to drain before destroying the device.
+// Distinct resource creation/destruction, immutable queries, and timeline waits may run concurrently on one device.
+// Resource lifetime changes must be synchronized with every CPU/GPU use of that resource. Descriptor writes require disjoint destinations.
+// Each queue and command pool (including recording its buffers) is externally synchronized; different queues/pools may run concurrently.
+// Device idle/destruction requires exclusive access. Destroy command pools before their device. There are no internal queue or pool locks.
 [[nodiscard]] DeviceInit create_device(const DeviceDesc& desc = {}) noexcept;
 void destroy_device(Device* device) noexcept;
 [[nodiscard]] const DeviceCaps& get_device_caps(const Device* device) noexcept;
 [[nodiscard]] bool supports_texture_format(const Device* device, Format format, TextureUsage usage) noexcept;
 [[nodiscard]] uint32x2 get_drawable_extent(Device* device) noexcept;
+[[nodiscard]] Queue* get_queue(Device* device, uint32 index = 0) noexcept; // Borrowed until device destruction; index < queue_count.
 
 [[nodiscard]] TimelineSemaphore* create_timeline_semaphore(Device* device, uint64 initial_value = 0) noexcept;
 void destroy_timeline_semaphore(TimelineSemaphore* semaphore) noexcept;
@@ -647,8 +663,10 @@ void destroy_timeline_semaphore(TimelineSemaphore* semaphore) noexcept;
 void wait_timeline(TimelinePoint point) noexcept;
 void wait_idle(Device* device) noexcept;
 
-[[nodiscard]] SwapchainFrame acquire(Device* device) noexcept; // Empty while the drawable extent is zero.
-void submit_and_present(Device* device, Span<CommandBuffer* const> commands, TimelinePoint completion) noexcept;
+// Acquire outside a render pass. Only this command buffer may access the returned image; end_commands prepares it for presentation.
+// Empty while the drawable extent is zero. A nonempty acquire must be submitted with submit_and_present on queue zero.
+[[nodiscard]] SwapchainFrame acquire(CommandBuffer* commands) noexcept;
+void submit_and_present(Queue* queue, const SubmitDesc& desc) noexcept;
 
 // Every non-null returned pointer is 16-byte aligned. Descriptor heaps are exact allocations;
 // cpu_visible, gpu_only, and readback heaps are raw blocks for application-side suballocation.
@@ -672,7 +690,8 @@ template<typename T>
 [[nodiscard]] TextureHeap create_texture_heap(Device* device, uint64 byte_count) noexcept;
 void destroy_texture_heap(const TextureHeap& heap) noexcept;
 [[nodiscard]] SizeAlign get_texture_size_align(Device* device, const TextureDesc& desc) noexcept;
-[[nodiscard]] Texture* create_texture(Device* device, const TextureDesc& desc, const TextureHeap& heap, uint64 offset) noexcept;
+// Records initialization into commands, outside a render pass. Order every use after this command buffer's initialization, including across queues.
+[[nodiscard]] Texture* create_texture(CommandBuffer* commands, const TextureDesc& desc, const TextureHeap& heap, uint64 offset) noexcept;
 void destroy_texture(Texture* texture) noexcept;
 [[nodiscard]] RenderView* create_render_view(Texture* texture, const RenderViewDesc& desc = {}) noexcept;
 void destroy_render_view(RenderView* render_view) noexcept;
@@ -688,9 +707,15 @@ void write_sampler_descriptor(Device* device, void* cpu_destination, const Sampl
 [[nodiscard]] PSO* create_compute_pso(Device* device, Span<const uint32> compute_spirv) noexcept;
 void destroy_pso(PSO* pso) noexcept;
 
-// Every begun command buffer must be included exactly once in the next submit or submit_and_present call
-[[nodiscard]] CommandBuffer* begin_commands(Device* device) noexcept;
-void submit(Span<CommandBuffer* const> commands, TimelinePoint completion) noexcept;
+// Pools retain command storage until destruction. Reset only after every submitted buffer from this pool completes; unsubmitted buffers are discarded.
+// Reset invalidates all previously returned CommandBuffer handles. Use one pool per worker and in-flight frame for independent recording/reuse.
+[[nodiscard]] CommandPool* create_command_pool(Device* device) noexcept;
+void destroy_command_pool(CommandPool* pool) noexcept;
+void reset_command_pool(CommandPool* pool) noexcept;
+[[nodiscard]] CommandBuffer* begin_commands(CommandPool* pool) noexcept;
+void end_commands(CommandBuffer* commands) noexcept;
+// Submit any ended subset exactly once before pool reset. Supply a live completion semaphore and order its signal values across queues.
+void submit(Queue* queue, const SubmitDesc& desc) noexcept;
 
 void set_texture_descriptor_heap(CommandBuffer* commands, GpuRange heap) noexcept; // Heap range must be full GpuHeap range
 void set_sampler_descriptor_heap(CommandBuffer* commands, GpuRange heap) noexcept; // Heap range must be full GpuHeap range

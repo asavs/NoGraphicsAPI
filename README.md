@@ -234,7 +234,13 @@ Implemented today: graphics, mesh, and compute PSOs; direct and indirect work; G
 application-owned descriptor heaps; common texture types and views; dynamic rendering and
 viewport/scissor/depth-stencil state; global barriers; timeline submission; deferred destruction; and Win32 presentation.
 
-This is a deliberately single-threaded, single-queue graphics API. Ray tracing, task shaders, sparse memory,
+Multiple queues share one graphics + compute queue family. Request the desired count at device creation;
+`DeviceCaps::queue_count` reports the available result. Queues and command pools are externally synchronized,
+with one pool per worker and in-flight frame. Resource creation and timeline waits may run concurrently.
+Texture creation records initialization into an explicit command buffer. End buffers before submission,
+and reset their pool after every submitted use completes. Queue zero owns Win32 presentation.
+
+Dedicated compute/transfer queue families, ray tracing, task shaders, sparse memory,
 device-generated command graphs beyond the existing indirect operations, pipeline caching, MSAA, non-Win32
 presentation, and a Metal backend are outside the current implementation. The public header remains the source
 of truth for the exact API surface.

@@ -33,7 +33,7 @@ conventional feature checked by device creation.
 | Buffer device address | Gives GPU heaps 64-bit shader addresses for their lifetime and enables typed pointer fields in shared structures. |
 | Vulkan 1.3 `synchronization2` and `dynamicRendering` | Resource-free barriers and rendering without render-pass or framebuffer objects. |
 | Core Vulkan dynamic state | Command-set viewport, scissor, and exposed depth/stencil state. |
-| Timeline semaphores | Application-visible completion points plus private command-context retirement. |
+| Timeline semaphores | Application-visible completion points and cross-queue waits; private swapchain retirement. |
 | Shader and layout features | Scalar layout, float16, 16-bit push/storage access, draw parameters, independent blending, and formatless storage-image access. |
 | Texture features | At least BC or ASTC LDR compression; exact format and usage support remains queryable. |
 | Win32 WSI | `VK_KHR_surface`, `VK_KHR_win32_surface`, `VK_KHR_swapchain`, and the maintenance extensions listed below. |
@@ -211,10 +211,22 @@ root ABI and descriptor heaps.
 
 ## Submission, presentation, and lifetime
 
-Command buffers are one-shot recording handles. Every buffer begun since the previous submission
-must appear exactly once in the next submit or present span. The span defines execution order, all
-handles are consumed, and the caller-provided timeline point is signaled without waiting for
-execution.
+Command buffers are one-shot recording handles allocated from explicit command pools. End each buffer
+before submitting any subset to a selected queue. Other pools can continue recording independently.
+Reset a pool only after all its submitted work completes; reset discards unsubmitted work and invalidates
+its command-buffer handles. Pools retain storage for reuse until destruction.
+
+Device creation requests a queue count, capped to the selected graphics + compute family's capacity.
+All exposed queues share that family, so resources need no queue-family ownership transfers.
+Submission accepts timeline waits covering all command stages and signals the caller's completion point.
+Use waits for cross-queue hazards; an ordinary barrier only synchronizes work on its own queue.
+Prefer one signaling timeline per queue, or explicitly order signals to a shared timeline.
+
+Each queue and command pool is externally synchronized, including command recording within the pool.
+Distinct resource creation, immutable queries, timeline waits, and descriptor writes to disjoint slots
+can run concurrently on one device. Texture creation records its `UNDEFINED` to `GENERAL` transition
+in the supplied command buffer; every use must follow that initialization. Resource lifetime and
+mutable utility allocators remain caller-synchronized. No internal queue or pool locks are used.
 
 Public timeline semaphores are the application's reuse mechanism. Poll or wait for the point that
 last used mutable upload data, readback storage, a texture placement, indirect argument memory, or a
@@ -227,8 +239,11 @@ timeline values complete. Applications normally tick it once per frame. At shutd
 The backend does not recycle application allocator entries or descriptor slots; `wait_idle()` remains
 an intentional whole-device drain.
 
-For presentation, `acquire()` returns a swapchain-owned `RenderView` and extent, or an empty frame
-while the drawable extent is zero. Binary WSI semaphores remain private, while
+For presentation, `acquire(commands)` returns a swapchain-owned `RenderView` and extent, or an empty frame
+while the drawable extent is zero. Only that command buffer may access the image; `end_commands()`
+records its transition back to presentation. Submit it through `submit_and_present()` on queue zero.
+Windowed device creation/destruction, drawable queries, acquire, and presentation stay on the native
+message-pump thread; other work follows the threading rules above. Binary WSI semaphores remain private, while
 `VK_KHR_swapchain_maintenance1` present fences support safe reuse and swapchain replacement without
 draining unrelated queue work.
 
@@ -237,6 +252,11 @@ draining unrelated queue work.
 The tests cover the public CPU-facing contracts, while the examples exercise representative GPU
 paths. Debug builds enable Vulkan validation when it is installed. Runtime extension and feature
 queries remain authoritative.
+
+On an RTX 4090 with NVIDIA 596.99, an address-based texture upload/readback pair returned stale data
+after a transfer-write to transfer-read barrier, including with sequential recording. A timeline wait
+between submissions works; a full Vulkan memory dependency also worked in isolation. This existing
+copy-path issue is separate from CPU threading; the parallel texture test uses an explicit timeline wait.
 
 See [No Graphics API comparison](no-graphics-api-comparison.md) for the feature-by-feature assessment
 of direct matches, Vulkan adaptations, and intentionally unsupported areas.

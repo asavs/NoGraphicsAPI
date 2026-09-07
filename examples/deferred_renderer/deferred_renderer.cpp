@@ -8,26 +8,23 @@
 #include <NoGraphicsAPIUtility/math.hpp>
 #include <NoGraphicsAPIUtility/texture_allocator.hpp>
 
-#include <cassert>
-#include <chrono>
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
+#include <assert.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 using namespace gpu;
-using namespace std;
 
 namespace
 {
 
-constexpr uint32_t initial_width = 1280;
-constexpr uint32_t initial_height = 720;
-constexpr uint32_t object_count = object_grid_width * object_grid_width;
-constexpr uint32_t frames_in_flight = 2;
-constexpr uint32_t gbuffer_texture_count = uint32_t(GBufferTexture::count);
-constexpr uint64_t data_heap_size = 16 * 1024 * 1024;
-constexpr uint64_t texture_heap_size = 256 * 1024 * 1024;
+constexpr uint32 initial_width = 1280;
+constexpr uint32 initial_height = 720;
+constexpr uint32 object_count = object_grid_width * object_grid_width;
+constexpr uint32 frames_in_flight = 2;
+constexpr uint32 gbuffer_texture_count = uint32(GBufferTexture::count);
+constexpr uint64 data_heap_size = 16 * 1024 * 1024;
+constexpr uint64 texture_heap_size = 256 * 1024 * 1024;
 constexpr float cube_scale = 0.42f;
 constexpr float cube_rotation_speed = 0.5f;
 constexpr float minimum_orbit_radius = 54.0f;
@@ -46,8 +43,8 @@ struct GBuffer
     RenderView* albedo_render_view = nullptr;
     RenderView* normal_roughness_render_view = nullptr;
     RenderView* depth_render_view = nullptr;
-    uint32_t width = 0;
-    uint32_t height = 0;
+    uint32 width = 0;
+    uint32 height = 0;
 };
 
 void destroy_gbuffer(TextureAllocator& texture_allocator, GBuffer& gbuffer) noexcept
@@ -65,9 +62,9 @@ void recreate_gbuffer(Device* device,
                       TextureAllocator& texture_allocator,
                       GBuffer& gbuffer,
                       byte* descriptors,
-                      uint64_t descriptor_size,
-                      uint32_t width,
-                      uint32_t height) noexcept
+                      uint64 descriptor_size,
+                      uint32 width,
+                      uint32 height) noexcept
 {
     gbuffer = {
         .albedo = texture_allocator.allocate({
@@ -101,7 +98,7 @@ void recreate_gbuffer(Device* device,
     write_texture_descriptor(device, descriptors + size_t(GBufferTexture::depth) * descriptor_size, gbuffer.depth.texture, TextureDescriptorType::sampled);
 }
 
-float random_signed(uint32_t& state) noexcept
+float random_signed(uint32& state) noexcept
 {
     state ^= state << 13u;
     state ^= state >> 17u;
@@ -114,9 +111,9 @@ void initialize_object_data(ObjectData* objects) noexcept
     constexpr float minimum_radius_squared = minimum_orbit_radius * minimum_orbit_radius;
     constexpr float maximum_radius_squared = maximum_orbit_radius * maximum_orbit_radius;
     const float softening_squared = gravity_softening * gravity_softening;
-    uint32_t random_state = 0x12345678u;
+    uint32 random_state = 0x12345678u;
 
-    for (uint32_t i = 0; i != object_count; ++i)
+    for (uint32 i = 0; i != object_count; ++i)
     {
         float3 position{};
         float radius_squared = 0.0f;
@@ -145,7 +142,7 @@ void initialize_object_data(ObjectData* objects) noexcept
         tangent = math::normalize(tangent);
 
         const float inverse_softened_distance = math::rsqrt(radius_squared + softening_squared);
-        const float circular_speed = sqrt(
+        const float circular_speed = sqrtf(
             central_gravity * radius_squared *
             inverse_softened_distance * inverse_softened_distance *
             inverse_softened_distance);
@@ -177,6 +174,47 @@ int main()
     const DeviceCaps& caps = get_device_caps(device);
     printf("Using %s\n", caps.device_name);
 
+    // Shaders
+    const Span<uint32> simulation_spirv = read_spirv(NOGRAPHICSAPI_SIMULATION_COMPUTE_SPV_PATH);
+    const Span<uint32> gbuffer_mesh_spirv = read_spirv(NOGRAPHICSAPI_GBUFFER_MESH_SPV_PATH);
+    const Span<uint32> gbuffer_fragment_spirv = read_spirv(NOGRAPHICSAPI_GBUFFER_FRAGMENT_SPV_PATH);
+    const Span<uint32> deferred_vertex_spirv = read_spirv(NOGRAPHICSAPI_DEFERRED_VERTEX_SPV_PATH);
+    const Span<uint32> deferred_fragment_spirv = read_spirv(NOGRAPHICSAPI_DEFERRED_FRAGMENT_SPV_PATH);
+    if (!simulation_spirv.data || !gbuffer_mesh_spirv.data || !gbuffer_fragment_spirv.data || !deferred_vertex_spirv.data || !deferred_fragment_spirv.data)
+    {
+        free(deferred_fragment_spirv.data);
+        free(deferred_vertex_spirv.data);
+        free(gbuffer_fragment_spirv.data);
+        free(gbuffer_mesh_spirv.data);
+        free(simulation_spirv.data);
+        destroy_device(device);
+        close_example_window(window);
+        return 1;
+    }
+    PSO* simulation_pso = create_compute_pso(device, simulation_spirv);
+    free(simulation_spirv.data);
+
+    PSO* gbuffer_pso = create_mesh_pso(device, {
+        .mesh_spirv = gbuffer_mesh_spirv,
+        .fragment_spirv = gbuffer_fragment_spirv,
+        .color_targets = {
+            {.format = Format::rgba8_unorm},
+            {.format = Format::rgba16_float},
+        },
+        .depth_format = Format::d32_float,
+        .rasterization = { .cull = CullMode::clockwise },
+    });
+    free(gbuffer_fragment_spirv.data);
+    free(gbuffer_mesh_spirv.data);
+
+    PSO* deferred_lighting_pso = create_graphics_pso(device, {
+        .vertex_spirv = deferred_vertex_spirv,
+        .fragment_spirv = deferred_fragment_spirv,
+        .color_targets = {{.format = Format::bgra8_srgb}},
+    });
+    free(deferred_fragment_spirv.data);
+    free(deferred_vertex_spirv.data);
+
     // GPU resources
     GpuHeap texture_descriptor_heap =
         create_gpu_heap(device, caps.texture_descriptor_size * gbuffer_texture_count * frames_in_flight, MemoryType::texture_descriptor_heap);
@@ -187,26 +225,6 @@ int main()
     TextureHeap texture_heap = create_texture_heap(device, texture_heap_size);
     TextureAllocator texture_allocator(device, texture_heap, 64);
 
-    // Shaders
-    PSO* simulation_pso = create_compute_pso(device, read_spirv(NOGRAPHICSAPI_SIMULATION_COMPUTE_SPV_PATH));
-
-    PSO* gbuffer_pso = create_mesh_pso(device, {
-        .mesh_spirv = read_spirv(NOGRAPHICSAPI_GBUFFER_MESH_SPV_PATH),
-        .fragment_spirv = read_spirv(NOGRAPHICSAPI_GBUFFER_FRAGMENT_SPV_PATH),
-        .color_targets = {
-            {.format = Format::rgba8_unorm},
-            {.format = Format::rgba16_float},
-        },
-        .depth_format = Format::d32_float,
-        .rasterization = { .cull = CullMode::clockwise },
-    });
-
-    PSO* deferred_lighting_pso = create_graphics_pso(device, {
-        .vertex_spirv = read_spirv(NOGRAPHICSAPI_DEFERRED_VERTEX_SPV_PATH),
-        .fragment_spirv = read_spirv(NOGRAPHICSAPI_DEFERRED_FRAGMENT_SPV_PATH),
-        .color_targets = {{.format = Format::bgra8_srgb}},
-    });
-
     // Init camera and simulation
     const float4x4 view = math::look_at_rh(camera_position,
         {.x = 0.0f, .y = 0.0f, .z = 0.0f},
@@ -215,8 +233,8 @@ int main()
     const float3 view_up = math::to_float3(view.rows[1]);
     const float3 view_forward = -math::to_float3(view.rows[2]);
     GBuffer gbuffer{};
-    uint32_t descriptor_row = 0;
-    chrono::steady_clock::time_point previous_time = chrono::steady_clock::now();
+    uint32 descriptor_row = 0;
+    double previous_time = example_time_seconds();
     float rotation_angle = 0.0f;
 
     TimelinePoint latest_completion{.semaphore = create_timeline_semaphore(device)};
@@ -255,8 +273,8 @@ int main()
         set_texture_descriptor_heap(commands, gpu_range(texture_descriptor_heap));
 
         // Simulation
-        const chrono::steady_clock::time_point current_time = chrono::steady_clock::now();
-        const float delta_seconds = chrono::duration<float>(current_time - previous_time).count();
+        const double current_time = example_time_seconds();
+        const float delta_seconds = float(current_time - previous_time);
         previous_time = current_time;
 
         barrier(commands,

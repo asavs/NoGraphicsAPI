@@ -1,7 +1,8 @@
 #include "example_support.hpp"
 
-#include <cassert>
-#include <cstdio>
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -12,9 +13,8 @@
 #include <windows.h>
 
 using namespace gpu;
-using namespace std;
 
-vector<uint32_t> read_spirv(const char* path)
+Span<uint32> read_spirv(const char* path) noexcept
 {
     assert(path);
     FILE* file = fopen(path, "rb");
@@ -31,8 +31,8 @@ vector<uint32_t> read_spirv(const char* path)
         return {};
     }
     const long byte_count = ftell(file);
-    if (byte_count < static_cast<long>(5 * sizeof(uint32_t)) ||
-        byte_count % static_cast<long>(sizeof(uint32_t)) != 0)
+    if (byte_count < static_cast<long>(5 * sizeof(uint32)) ||
+        byte_count % static_cast<long>(sizeof(uint32)) != 0)
     {
         fprintf(stderr, "Invalid SPIR-V file size: %s\n", path);
         fclose(file);
@@ -40,15 +40,13 @@ vector<uint32_t> read_spirv(const char* path)
     }
     rewind(file);
 
-    vector<uint32_t> code(
-        static_cast<size_t>(byte_count) / sizeof(uint32_t));
-    const bool read_succeeded =
-        fread(code.data(), sizeof(uint32_t), code.size(), file) ==
-        code.size();
+    Span<uint32> code(static_cast<uint32*>(malloc(size_t(byte_count))), size_t(byte_count) / sizeof(uint32));
+    const bool read_succeeded = fread(code.data, sizeof(uint32), code.size, file) == code.size;
     fclose(file);
-    if (!read_succeeded || code[0] != 0x07230203u)
+    if (!read_succeeded || code.data[0] != 0x07230203u)
     {
         fprintf(stderr, "Invalid SPIR-V file: %s\n", path);
+        free(code.data);
         return {};
     }
     return code;
@@ -75,6 +73,20 @@ bool read_binary_file(const char* path,
     if (!read_succeeded)
         fprintf(stderr, "Invalid resource file: %s\n", path);
     return read_succeeded;
+}
+
+double example_time_seconds() noexcept
+{
+    static double seconds_per_tick = 0.0;
+    if (seconds_per_tick == 0.0)
+    {
+        LARGE_INTEGER frequency{};
+        QueryPerformanceFrequency(&frequency);
+        seconds_per_tick = 1.0 / double(frequency.QuadPart);
+    }
+    LARGE_INTEGER counter{};
+    QueryPerformanceCounter(&counter);
+    return double(counter.QuadPart) * seconds_per_tick;
 }
 
 namespace
@@ -115,8 +127,8 @@ LRESULT CALLBACK example_window_proc(HWND hwnd,
 } // namespace
 
 void* open_example_window(const char* title,
-                          uint32_t width,
-                          uint32_t height) noexcept
+                          uint32 width,
+                          uint32 height) noexcept
 {
     assert(title && width && height);
     const HINSTANCE instance = GetModuleHandleA(nullptr);

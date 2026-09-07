@@ -1,6 +1,6 @@
 #include <NoGraphicsAPIUtility/texture_allocator.hpp>
 
-#include <cassert>
+#include <assert.h>
 
 namespace gpu
 {
@@ -8,7 +8,7 @@ namespace gpu
 namespace
 {
 
-uint64_t texture_element_size(Device* device) noexcept
+uint64 texture_element_size(Device* device) noexcept
 {
     assert(device);
     return get_device_caps(device).texture_heap_alignment;
@@ -16,7 +16,7 @@ uint64_t texture_element_size(Device* device) noexcept
 
 } // namespace
 
-TextureAllocator::TextureAllocator(Device* device, const TextureHeap& heap, uint32_t max_textures) noexcept
+TextureAllocator::TextureAllocator(Device* device, const TextureHeap& heap, uint32 max_textures) noexcept
     : device_(device), heap_(heap), ranges_(heap.size, max_textures, texture_element_size(device))
 {
     assert(heap.owner);
@@ -30,7 +30,7 @@ PlacedTexture TextureAllocator::allocate(const TextureDesc& desc) noexcept
         return {};
 
     return {
-        .texture = create_texture(device_, desc, heap_, uint64_t{range.offset} * ranges_.element_size),
+        .texture = create_texture(device_, desc, heap_, uint64{range.offset} * ranges_.element_size),
         .token = range.token,
     };
 }

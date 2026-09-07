@@ -33,6 +33,10 @@ endfunction()
 find_package(Vulkan 1.4.357 REQUIRED)
 
 add_library(NoGraphicsAPI STATIC
+    include/NoGraphicsAPI/types.h
+    include/NoGraphicsAPI/span.hpp
+    include/NoGraphicsAPI/traits.hpp
+    include/NoGraphicsAPI/bit.hpp
     include/NoGraphicsAPI/NoGraphicsAPI.hpp
     src/NoGraphicsAPI.cpp
 )

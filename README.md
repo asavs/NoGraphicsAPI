@@ -249,6 +249,7 @@ Further reading:
 
 - [Comparison with *No Graphics API*](docs/no-graphics-api-comparison.md)
 - [Vulkan extension and command mapping](docs/vulkan-support.md)
+- [Known driver issues](docs/known-driver-issues.md)
 - [Slang shader contract and root ABI](docs/slang.md)
 - [Proposed Metal 4 port](docs/metal-porting.md)
 

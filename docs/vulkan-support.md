@@ -253,10 +253,7 @@ The tests cover the public CPU-facing contracts, while the examples exercise rep
 paths. Debug builds enable Vulkan validation when it is installed. Runtime extension and feature
 queries remain authoritative.
 
-On an RTX 4090 with NVIDIA 596.99, an address-based texture upload/readback pair returned stale data
-after a transfer-write to transfer-read barrier, including with sequential recording. A timeline wait
-between submissions works; a full Vulkan memory dependency also worked in isolation. This existing
-copy-path issue is separate from CPU threading; the parallel texture test uses an explicit timeline wait.
+See [known driver issues](known-driver-issues.md) for observed driver-specific behavior and workarounds.
 
 See [No Graphics API comparison](no-graphics-api-comparison.md) for the feature-by-feature assessment
 of direct matches, Vulkan adaptations, and intentionally unsupported areas.

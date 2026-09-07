@@ -123,8 +123,8 @@ int main() {
 
 	TimelinePoint latest_completion{.semaphore = create_timeline_semaphore(device)};
 	Queue* queue = get_queue(device);
-	CommandPool* upload_pool = create_command_pool(device);
-	CommandBuffer* upload_commands = begin_commands(upload_pool);
+	CommandPool* command_pools[] = {create_command_pool(device), create_command_pool(device)};
+	CommandBuffer* upload_commands = begin_commands(command_pools[0]);
 
 	// Textures
 	PlacedTexture texture = texture_allocator.allocate(upload_commands, {
@@ -151,13 +151,11 @@ int main() {
 	latest_completion.value++;
 	submit(queue, {.commands = {upload_commands}, .completion = latest_completion});
 	wait_timeline(latest_completion);
-	destroy_command_pool(upload_pool);
 
 	PlacedTexture depth{};
 	RenderView* depth_render_view = nullptr;
 	uint32x2 depth_extent{};
 	uint64 frame_index = 0;
-	CommandPool* command_pools[] = {create_command_pool(device), create_command_pool(device)};
 
 	while (pump_example_window(window))
 	{

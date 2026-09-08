@@ -344,7 +344,8 @@ static_assert(default_device_init.device == nullptr &&
 constexpr gpu::DeviceDesc default_device_desc{};
 static_assert(default_device_desc.window == nullptr &&
               default_device_desc.swapchain_format == gpu::Format::undefined &&
-              default_device_desc.desired_swapchain_image_count == 2);
+              default_device_desc.desired_swapchain_image_count == 2 &&
+              default_device_desc.timestamp_query_count == 256);
 constexpr gpu::uint32x2 default_uint32x2{};
 static_assert(default_uint32x2.x == 0 && default_uint32x2.y == 0);
 constexpr gpu::uint32x3 default_uint32x3{};
@@ -492,6 +493,7 @@ using CommandBatch = gpu::Span<gpu::CommandBuffer* const>;
 using CreateComputePSOFunction = gpu::PSO* (*)(gpu::Device*, gpu::Span<const uint32>) noexcept;
 using SubmitFunction = void (*)(CommandBatch, gpu::TimelinePoint) noexcept;
 using SubmitAndPresentFunction = void (*)(gpu::Device*, CommandBatch, gpu::TimelinePoint) noexcept;
+using WriteTimestampFunction = void (*)(gpu::CommandBuffer*, uint64*, gpu::Stage) noexcept;
 using SetHeapFunction = void (*)(gpu::CommandBuffer*, gpu::GpuRange) noexcept;
 using SetViewportFunction = void (*)(gpu::CommandBuffer*, const gpu::Viewport&) noexcept;
 using SetScissorFunction = void (*)(gpu::CommandBuffer*, const gpu::Scissor&) noexcept;
@@ -520,6 +522,7 @@ static_assert(gpu::detail::is_same_v<decltype(&gpu::acquire), AcquireFunction>);
 static_assert(gpu::detail::is_same_v<decltype(&gpu::create_compute_pso), CreateComputePSOFunction>);
 static_assert(gpu::detail::is_same_v<decltype(&gpu::submit), SubmitFunction>);
 static_assert(gpu::detail::is_same_v<decltype(&gpu::submit_and_present), SubmitAndPresentFunction>);
+static_assert(gpu::detail::is_same_v<decltype(&gpu::write_timestamp), WriteTimestampFunction>);
 static_assert(gpu::detail::is_same_v<decltype(&gpu::set_texture_descriptor_heap), SetHeapFunction>);
 static_assert(gpu::detail::is_same_v<decltype(&gpu::set_sampler_descriptor_heap), SetHeapFunction>);
 static_assert(gpu::detail::is_same_v<decltype(&gpu::set_viewport), SetViewportFunction>);
@@ -548,6 +551,7 @@ static_assert(__is_constructible(CommandBatch, std::initializer_list<gpu::Comman
         .window = descriptor,
         .swapchain_format = gpu::Format::bgra8_srgb,
         .desired_swapchain_image_count = 3,
+        .timestamp_query_count = 513,
     });
     const gpu::DeviceCaps& caps = gpu::get_device_caps(device);
     const bool supported = gpu::supports_texture_format(device, gpu::Format::rgba8_unorm, gpu::TextureUsage::sampled);
@@ -592,6 +596,8 @@ static_assert(__is_constructible(CommandBatch, std::initializer_list<gpu::Comman
 
     gpu::CommandBuffer* a = gpu::begin_commands(device);
     gpu::CommandBuffer* b = gpu::begin_commands(device);
+    gpu::write_timestamp(a, reinterpret_cast<uint64*>(range.gpu));
+    gpu::write_timestamp(b, reinterpret_cast<uint64*>(range.gpu) + 1, gpu::Stage::transfer);
     gpu::bind_pso(a, pso);
     gpu::set_texture_descriptor_heap(a, range);
     gpu::set_sampler_descriptor_heap(a, range);

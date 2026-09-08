@@ -34,6 +34,7 @@ conventional feature checked by device creation.
 | Vulkan 1.3 `synchronization2` and `dynamicRendering` | Resource-free barriers and rendering without render-pass or framebuffer objects. |
 | Core Vulkan dynamic state | Command-set viewport, scissor, and exposed depth/stencil state. |
 | Timeline semaphores | Application-visible completion points plus private command-context retirement. |
+| 64-bit graphics/compute timestamps | GPU markers resolve to application-owned GPU addresses at command-buffer end. |
 | Shader and layout features | Scalar layout, float16, 16-bit push/storage access, draw parameters, independent blending, and formatless storage-image access. |
 | Texture features | At least BC or ASTC LDR compression; exact format and usage support remains queryable. |
 | Win32 WSI | `VK_KHR_surface`, `VK_KHR_win32_surface`, `VK_KHR_swapchain`, and the maintenance extensions listed below. |
@@ -210,6 +211,14 @@ use `VK_EXT_mesh_shader` and support direct and indirect meshlet draws. Both pat
 root ABI and descriptor heaps.
 
 ## Submission, presentation, and lifetime
+
+`write_timestamp(commands, gpu_destination)` captures a 64-bit timestamp, defaulting to `Stage::all_commands`.
+`DeviceDesc::timestamp_query_count` sets each command buffer's capacity and defaults to 256. Zero disables timestamps and their pool/storage allocation.
+Markers target distinct, 8-byte-aligned destinations. Private query pools resolve to those addresses
+at command-buffer end through `vkCmdCopyQueryPoolResultsToMemoryKHR`; markers are valid inside rendering, and the copies execute outside it.
+The backend makes copied results host-visible. Read mapped `MemoryType::readback` destinations after the submission timeline completes,
+and multiply unsigned tick differences by `DeviceCaps::timestamp_period_ns` to obtain nanoseconds. Results are published at completion;
+markers do not make results available to subsequent commands within the same recording. Query pools retire with their command contexts.
 
 Command buffers are one-shot recording handles. Every buffer begun since the previous submission
 must appear exactly once in the next submit or present span. The span defines execution order, all

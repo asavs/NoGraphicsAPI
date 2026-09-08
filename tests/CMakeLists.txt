@@ -30,13 +30,11 @@ add_executable(test_command_context command_context_test.cpp)
 NoGraphicsAPI_disable_exceptions(test_command_context)
 target_link_libraries(test_command_context PRIVATE NoGraphicsAPI::NoGraphicsAPI)
 add_test(NAME test_command_context COMMAND test_command_context)
-set_tests_properties(test_command_context PROPERTIES SKIP_RETURN_CODE 77)
 
 add_executable(test_placed_texture placed_texture_test.cpp)
 NoGraphicsAPI_disable_exceptions(test_placed_texture)
 target_link_libraries(test_placed_texture PRIVATE NoGraphicsAPIUtility::textures)
 add_test(NAME test_placed_texture COMMAND test_placed_texture)
-set_tests_properties(test_placed_texture PROPERTIES SKIP_RETURN_CODE 77)
 
 add_executable(test_multithreading multithreading_test.cpp)
 NoGraphicsAPI_disable_exceptions(test_multithreading)
@@ -45,7 +43,7 @@ add_test(NAME test_multithreading COMMAND test_multithreading)
 add_test(NAME test_multiple_queues COMMAND test_multithreading --multiple-queues)
 
 set_tests_properties(test_command_context test_placed_texture test_multithreading test_multiple_queues PROPERTIES
-    SKIP_RETURN_CODE 77 TIMEOUT 60 FAIL_REGULAR_EXPRESSION "Validation Error;UNASSIGNED-Threading")
+    SKIP_RETURN_CODE 77 TIMEOUT 60 FAIL_REGULAR_EXPRESSION "NoGraphicsAPI validation:")
 
 if(WIN32)
     add_executable(test_presentation presentation_test.cpp)
@@ -53,5 +51,5 @@ if(WIN32)
     target_link_libraries(test_presentation PRIVATE NoGraphicsAPI::NoGraphicsAPI)
     add_test(NAME test_presentation COMMAND test_presentation)
     set_tests_properties(test_presentation PROPERTIES
-        SKIP_RETURN_CODE 77 TIMEOUT 60 FAIL_REGULAR_EXPRESSION "Validation Error;UNASSIGNED-Threading")
+        SKIP_RETURN_CODE 77 TIMEOUT 60 FAIL_REGULAR_EXPRESSION "NoGraphicsAPI validation:")
 endif()

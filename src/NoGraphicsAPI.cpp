@@ -1545,15 +1545,22 @@ struct QueriedFeatures
     VkPhysicalDeviceMeshShaderFeaturesEXT mesh_shader{ .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT};
     VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR swapchain_maintenance1{ .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR};
 
-    explicit QueriedFeatures(bool presentation, bool include_unified_image_layouts)
+    explicit QueriedFeatures(bool presentation, bool include_unified_image_layouts, bool include_address_commands = true)
     {
         core.pNext = &vulkan11;
         vulkan11.pNext = &vulkan12;
         vulkan12.pNext = &vulkan13;
         vulkan13.pNext = &vulkan14;
         vulkan14.pNext = &descriptor_heap;
-        descriptor_heap.pNext = &address_commands;
-        address_commands.pNext = &untyped_pointers;
+        if (include_address_commands)
+        {
+            descriptor_heap.pNext = &address_commands;
+            address_commands.pNext = &untyped_pointers;
+        }
+        else
+        {
+            descriptor_heap.pNext = &untyped_pointers;
+        }
         untyped_pointers.pNext = include_unified_image_layouts ? static_cast<void*>(&unified_image_layouts) : static_cast<void*>(&mesh_shader);
         unified_image_layouts.pNext = &mesh_shader;
         mesh_shader.pNext = presentation ? &swapchain_maintenance1 : nullptr;
@@ -1573,6 +1580,7 @@ struct Candidate
     bool texture_compression_etc2 = false;
     bool storage_input_output16 = false;
     bool khr_swapchain_maintenance1 = false;
+    bool device_address_commands = false;
     VkPhysicalDeviceDescriptorHeapPropertiesEXT heap_properties{ .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_HEAP_PROPERTIES_EXT};
     VkPhysicalDeviceVulkan12Properties vulkan12_properties{ .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES};
 };
@@ -1588,9 +1596,11 @@ Error inspect_candidate(VkPhysicalDevice physical_device, VkSurfaceKHR surface, 
     const bool unified_image_layouts_extension = has_name(
         {extensions, extension_count},
         VK_KHR_UNIFIED_IMAGE_LAYOUTS_EXTENSION_NAME);
+    const bool address_commands_extension = has_name(
+        {extensions, extension_count},
+        VK_KHR_DEVICE_ADDRESS_COMMANDS_EXTENSION_NAME);
     constexpr const char* required_extensions[]{
         VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME,
-        VK_KHR_DEVICE_ADDRESS_COMMANDS_EXTENSION_NAME,
         VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME,
         VK_EXT_MESH_SHADER_EXTENSION_NAME,
     };
@@ -1638,7 +1648,7 @@ Error inspect_candidate(VkPhysicalDevice physical_device, VkSurfaceKHR surface, 
     }
     if (!cpu_visible_memory) return Error::unsupported;
 
-    QueriedFeatures features(surface != VK_NULL_HANDLE, unified_image_layouts_extension);
+    QueriedFeatures features(surface != VK_NULL_HANDLE, unified_image_layouts_extension, address_commands_extension);
     vkGetPhysicalDeviceFeatures2(physical_device, &features.core);
     const bool required_features =
         features.core.features.shaderInt16 == VK_TRUE &&
@@ -1663,7 +1673,7 @@ Error inspect_candidate(VkPhysicalDevice physical_device, VkSurfaceKHR surface, 
         features.vulkan13.maintenance4 == VK_TRUE &&
         features.vulkan14.maintenance5 == VK_TRUE &&
         features.descriptor_heap.descriptorHeap == VK_TRUE &&
-        features.address_commands.deviceAddressCommands == VK_TRUE &&
+        (!address_commands_extension || features.address_commands.deviceAddressCommands == VK_TRUE) &&
         features.untyped_pointers.shaderUntypedPointers == VK_TRUE &&
         features.mesh_shader.meshShader == VK_TRUE &&
         (features.core.features.textureCompressionBC == VK_TRUE ||
@@ -1678,6 +1688,7 @@ Error inspect_candidate(VkPhysicalDevice physical_device, VkSurfaceKHR surface, 
     result.texture_compression_etc2 = features.core.features.textureCompressionETC2 == VK_TRUE;
     result.storage_input_output16 = features.vulkan11.storageInputOutput16 == VK_TRUE;
     result.khr_swapchain_maintenance1 = khr_swapchain_maintenance1;
+    result.device_address_commands = address_commands_extension && features.address_commands.deviceAddressCommands == VK_TRUE;
 
     uint32 available_queue_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &available_queue_count, nullptr);
@@ -1907,7 +1918,7 @@ DeviceInit create_device(const DeviceDesc& desc) noexcept
             state->physical_device, static_cast<Format>(value));
     }
 
-    QueriedFeatures enabled_features(presentation, selected.unified_image_layouts);
+    QueriedFeatures enabled_features(presentation, selected.unified_image_layouts, selected.device_address_commands);
     state->texture_compression_etc2 = selected.texture_compression_etc2;
     enabled_features.core.features.imageCubeArray = selected.image_cube_array;
     enabled_features.core.features.samplerAnisotropy = VK_TRUE;
@@ -1936,12 +1947,12 @@ DeviceInit create_device(const DeviceDesc& desc) noexcept
     enabled_features.vulkan13.maintenance4 = VK_TRUE;
     enabled_features.vulkan14.maintenance5 = VK_TRUE;
     enabled_features.descriptor_heap.descriptorHeap = VK_TRUE;
-    enabled_features.address_commands.deviceAddressCommands = VK_TRUE;
+    if (selected.device_address_commands)
+        enabled_features.address_commands.deviceAddressCommands = VK_TRUE;
     enabled_features.untyped_pointers.shaderUntypedPointers = VK_TRUE;
     enabled_features.unified_image_layouts.unifiedImageLayouts = selected.unified_image_layouts ? VK_TRUE : VK_FALSE;
     enabled_features.mesh_shader.meshShader = VK_TRUE;
     enabled_features.swapchain_maintenance1.swapchainMaintenance1 = VK_TRUE;
-
     constexpr float queue_priority = 1.0f;
     const VkDeviceQueueCreateInfo queue_info{
         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -1952,7 +1963,10 @@ DeviceInit create_device(const DeviceDesc& desc) noexcept
     const char* enabled_device_extensions[7]{};
     uint32 enabled_device_extension_count = 0;
     enabled_device_extensions[enabled_device_extension_count++] = VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME;
-    enabled_device_extensions[enabled_device_extension_count++] = VK_KHR_DEVICE_ADDRESS_COMMANDS_EXTENSION_NAME;
+    if (selected.device_address_commands)
+    {
+        enabled_device_extensions[enabled_device_extension_count++] = VK_KHR_DEVICE_ADDRESS_COMMANDS_EXTENSION_NAME;
+    }
     enabled_device_extensions[enabled_device_extension_count++] = VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME;
     if (selected.unified_image_layouts)
     {
@@ -1988,24 +2002,31 @@ DeviceInit create_device(const DeviceDesc& desc) noexcept
     state->fn.cmd_bind_sampler_heap = load_device_proc<PFN_vkCmdBindSamplerHeapEXT>(state->device, "vkCmdBindSamplerHeapEXT");
     state->fn.cmd_bind_texture_heap = load_device_proc<PFN_vkCmdBindResourceHeapEXT>(state->device, "vkCmdBindResourceHeapEXT");
     state->fn.cmd_push_data = load_device_proc<PFN_vkCmdPushDataEXT>(state->device, "vkCmdPushDataEXT");
-    state->fn.cmd_bind_index_buffer = load_device_proc<PFN_vkCmdBindIndexBuffer3KHR>(state->device, "vkCmdBindIndexBuffer3KHR");
-    state->fn.cmd_draw_indirect = load_device_proc<PFN_vkCmdDrawIndirect2KHR>(state->device, "vkCmdDrawIndirect2KHR");
-    state->fn.cmd_draw_indexed_indirect = load_device_proc<PFN_vkCmdDrawIndexedIndirect2KHR>(state->device, "vkCmdDrawIndexedIndirect2KHR");
-    state->fn.cmd_dispatch_indirect = load_device_proc<PFN_vkCmdDispatchIndirect2KHR>(state->device, "vkCmdDispatchIndirect2KHR");
     state->fn.cmd_draw_mesh_tasks = load_device_proc<PFN_vkCmdDrawMeshTasksEXT>(state->device, "vkCmdDrawMeshTasksEXT");
-    state->fn.cmd_draw_mesh_tasks_indirect = load_device_proc<PFN_vkCmdDrawMeshTasksIndirect2EXT>(state->device, "vkCmdDrawMeshTasksIndirect2EXT");
-    state->fn.cmd_copy_memory = load_device_proc<PFN_vkCmdCopyMemoryKHR>(state->device, "vkCmdCopyMemoryKHR");
-    state->fn.cmd_copy_memory_to_image = load_device_proc<PFN_vkCmdCopyMemoryToImageKHR>(state->device, "vkCmdCopyMemoryToImageKHR");
-    state->fn.cmd_copy_image_to_memory = load_device_proc<PFN_vkCmdCopyImageToMemoryKHR>(state->device, "vkCmdCopyImageToMemoryKHR");
-    state->fn.cmd_copy_query_pool_results_to_memory =
-        load_device_proc<PFN_vkCmdCopyQueryPoolResultsToMemoryKHR>(state->device, "vkCmdCopyQueryPoolResultsToMemoryKHR");
+    if (selected.device_address_commands)
+    {
+        state->fn.cmd_bind_index_buffer = load_device_proc<PFN_vkCmdBindIndexBuffer3KHR>(state->device, "vkCmdBindIndexBuffer3KHR");
+        state->fn.cmd_draw_indirect = load_device_proc<PFN_vkCmdDrawIndirect2KHR>(state->device, "vkCmdDrawIndirect2KHR");
+        state->fn.cmd_draw_indexed_indirect = load_device_proc<PFN_vkCmdDrawIndexedIndirect2KHR>(state->device, "vkCmdDrawIndexedIndirect2KHR");
+        state->fn.cmd_dispatch_indirect = load_device_proc<PFN_vkCmdDispatchIndirect2KHR>(state->device, "vkCmdDispatchIndirect2KHR");
+        state->fn.cmd_draw_mesh_tasks_indirect = load_device_proc<PFN_vkCmdDrawMeshTasksIndirect2EXT>(state->device, "vkCmdDrawMeshTasksIndirect2EXT");
+        state->fn.cmd_copy_memory = load_device_proc<PFN_vkCmdCopyMemoryKHR>(state->device, "vkCmdCopyMemoryKHR");
+        state->fn.cmd_copy_memory_to_image = load_device_proc<PFN_vkCmdCopyMemoryToImageKHR>(state->device, "vkCmdCopyMemoryToImageKHR");
+        state->fn.cmd_copy_image_to_memory = load_device_proc<PFN_vkCmdCopyImageToMemoryKHR>(state->device, "vkCmdCopyImageToMemoryKHR");
+        state->fn.cmd_copy_query_pool_results_to_memory =
+            load_device_proc<PFN_vkCmdCopyQueryPoolResultsToMemoryKHR>(state->device, "vkCmdCopyQueryPoolResultsToMemoryKHR");
+        if (!state->fn.cmd_bind_index_buffer || !state->fn.cmd_draw_indirect ||
+            !state->fn.cmd_draw_indexed_indirect || !state->fn.cmd_dispatch_indirect ||
+            !state->fn.cmd_draw_mesh_tasks_indirect || !state->fn.cmd_copy_memory ||
+            !state->fn.cmd_copy_memory_to_image || !state->fn.cmd_copy_image_to_memory ||
+            !state->fn.cmd_copy_query_pool_results_to_memory)
+        {
+            return fail_device_creation(state, Error::driver_error);
+        }
+    }
     if (!state->fn.write_sampler_descriptors || !state->fn.write_resource_descriptors ||
         !state->fn.cmd_bind_sampler_heap || !state->fn.cmd_bind_texture_heap ||
-        !state->fn.cmd_push_data || !state->fn.cmd_bind_index_buffer ||
-        !state->fn.cmd_draw_indirect || !state->fn.cmd_draw_indexed_indirect ||
-        !state->fn.cmd_dispatch_indirect || !state->fn.cmd_draw_mesh_tasks ||
-        !state->fn.cmd_draw_mesh_tasks_indirect || !state->fn.cmd_copy_memory ||
-        !state->fn.cmd_copy_memory_to_image || !state->fn.cmd_copy_image_to_memory || !state->fn.cmd_copy_query_pool_results_to_memory)
+        !state->fn.cmd_push_data || !state->fn.cmd_draw_mesh_tasks)
     {
         return fail_device_creation(state, Error::driver_error);
     }

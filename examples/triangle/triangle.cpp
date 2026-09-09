@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-
 using namespace gpu;
 
 int main()
@@ -36,7 +35,16 @@ int main()
 
     TimelinePoint latest_completion{ .semaphore = create_timeline_semaphore(device) };
 
-    PlayerRoot player{ .position = { 0.0f, 0.0f } };
+    EntityRoot player{
+        .position = { 0.0f, 0.0f },
+        .color = { 0.30f, 0.80f, 1.0f },
+    };
+
+    const EntityRoot candle{
+        .position = { 0.35f, -0.20f },
+        .color = { 1.0f, 0.75f, 0.25f },
+    };
+
     constexpr float speed = 1.0f;
     double prev_time = example_time_seconds();
 
@@ -71,7 +79,13 @@ int main()
         });
 
         bind_pso(commands, triangle_pso);
+
+        // Draw candle (amber)
+        draw(commands, candle, 3);
+
+        // Draw player (cyan)
         draw(commands, player, 3);
+
         end_render_pass(commands);
 
         latest_completion.value++;

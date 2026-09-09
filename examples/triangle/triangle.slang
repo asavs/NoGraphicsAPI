@@ -1,17 +1,11 @@
 #include "triangle_shared.h"
 
-[[vk::push_constant]] ConstantBuffer<PlayerRoot> player;
+[[vk::push_constant]] ConstantBuffer<EntityRoot> entity;
 
 static const float2 positions[3] = {
     float2( 0.0f, -0.15f),
     float2( 0.12f, 0.15f),
     float2(-0.12f, 0.15f),
-};
-
-static const float3 colors[3] = {
-    float3(1.0f, 0.85f, 0.30f),
-    float3(0.9f, 0.45f, 0.10f),
-    float3(0.9f, 0.45f, 0.10f),
 };
 
 struct VertexOutput
@@ -24,8 +18,8 @@ struct VertexOutput
 VertexOutput vertexMain(uint vertex_index : SV_VertexID)
 {
     VertexOutput output;
-    output.position = float4(positions[vertex_index] + player.position, 0.0f, 1.0f);
-    output.color = colors[vertex_index];
+    output.position = float4(positions[vertex_index] + entity.position, 0.0f, 1.0f);
+    output.color = entity.color;
     return output;
 }
 

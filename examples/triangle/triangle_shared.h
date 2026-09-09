@@ -2,7 +2,8 @@
 
 #include <NoGraphicsAPIUtility/shader_types.h>
 
-struct PlayerRoot
+struct EntityRoot
 {
     float2 position;
+    float3 color;
 };

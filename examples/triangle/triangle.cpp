@@ -3,25 +3,28 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 using namespace gpu;
 
-int main()
+int main(int argc, char** argv)
 {
+    const bool headless = (argc > 1 && strcmp(argv[1], "--headless") == 0);
+
     constexpr uint32 width = 800;
     constexpr uint32 height = 600;
 
-    void* window = open_example_window("Sol Eremus 2D", width, height);
+    void* window = headless ? nullptr : open_example_window("Sol Eremus 2D", width, height);
     Device* device = create_device({ .window = window, .swapchain_format = Format::bgra8_srgb }).device;
 
-    if (!window || !device)
+    if ((!headless && !window) || !device)
     {
         destroy_device(device);
         close_example_window(window);
         return 1;
     }
 
-    printf("Using %s\n", get_device_caps(device).device_name);
+    printf("Using %s%s\n", get_device_caps(device).device_name, headless ? " (Headless Mode)" : "");
 
     const Span<uint32> vertex_spirv = read_spirv(NOGRAPHICSAPI_VERTEX_SPV_PATH);
     const Span<uint32> fragment_spirv = read_spirv(NOGRAPHICSAPI_FRAGMENT_SPV_PATH);
@@ -44,6 +47,34 @@ int main()
 
     constexpr float speed = 1.0f;
     double prev_time = example_time_seconds();
+    if (headless)
+    {
+        constexpr int tick_count = 10000;
+        const double t0 = example_time_seconds();
+        for (int i = 0; i < tick_count; ++i)
+        {
+            player.position.x += 0.00005f;
+            const float dx = player.position.x - candle_pos.x;
+            const float dy = player.position.y - candle_pos.y;
+            const bool in_range = (dx * dx + dy * dy) < (0.22f * 0.22f);
+            if (in_range && i == 5000)
+                candle_lit = !candle_lit;
+        }
+        const double t1 = example_time_seconds();
+        const double total_ms = (t1 - t0) * 1000.0;
+        const double ticks_per_sec = double(tick_count) / (t1 - t0);
+
+        printf("[Sol Eremus 2D Headless Runner]\n");
+        printf("Simulated %d ticks in %.2f ms (%.0f ticks/sec)\n", tick_count, total_ms, ticks_per_sec);
+        printf("Player: (%.3f, %.3f) | Candle: %s\n", player.position.x, player.position.y, candle_lit ? "Lit" : "Extinguished");
+
+        wait_idle(device);
+        destroy_timeline_semaphore(latest_completion.semaphore);
+        destroy_pso(triangle_pso);
+        destroy_device(device);
+        return 0;
+    }
+
 
     while (pump_example_window(window))
     {

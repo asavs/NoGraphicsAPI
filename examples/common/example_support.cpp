@@ -82,6 +82,13 @@ double example_time_seconds() noexcept
     QueryPerformanceCounter(&counter);
     return double(counter.QuadPart) * seconds_per_tick;
 }
+bool example_key_down(void* window, int key) noexcept
+{
+    if (GetForegroundWindow() != static_cast<HWND>(window))
+        return false;
+    return (GetAsyncKeyState(key) & 0x8000) != 0;
+}
+
 
 namespace
 {

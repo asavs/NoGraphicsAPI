@@ -1,16 +1,18 @@
+#include "triangle_shared.h"
 #include "example_support.hpp"
 
 #include <stdio.h>
 #include <stdlib.h>
 
+
 using namespace gpu;
 
 int main()
 {
-    constexpr uint32 width = 512;
-    constexpr uint32 height = 512;
+    constexpr uint32 width = 800;
+    constexpr uint32 height = 600;
 
-    void* window = open_example_window("NoGraphicsAPI triangle", width, height);
+    void* window = open_example_window("Sol Eremus 2D", width, height);
     Device* device = create_device({.window = window, .swapchain_format = Format::bgra8_srgb}).device;
 
     if (!window || !device)
@@ -34,18 +36,44 @@ int main()
 
     TimelinePoint latest_completion{ .semaphore = create_timeline_semaphore(device) };
 
+    PlayerRoot player{ .position = { 0.0f, 0.0f } };
+    constexpr float speed = 1.0f;
+    double prev_time = example_time_seconds();
+
     while (pump_example_window(window))
     {
+        const double current_time = example_time_seconds();
+        float dt = static_cast<float>(current_time - prev_time);
+        if (dt > 0.1f) dt = 0.1f;
+        prev_time = current_time;
+
+        if (example_key_down(window, 'W') || example_key_down(window, 0x26 /* VK_UP */))
+            player.position.y -= speed * dt;
+        if (example_key_down(window, 'S') || example_key_down(window, 0x28 /* VK_DOWN */))
+            player.position.y += speed * dt;
+        if (example_key_down(window, 'A') || example_key_down(window, 0x25 /* VK_LEFT */))
+            player.position.x -= speed * dt;
+        if (example_key_down(window, 'D') || example_key_down(window, 0x27 /* VK_RIGHT */))
+            player.position.x += speed * dt;
+
+        if (player.position.x < -0.85f) player.position.x = -0.85f;
+        if (player.position.x >  0.85f) player.position.x =  0.85f;
+        if (player.position.y < -0.85f) player.position.y = -0.85f;
+        if (player.position.y >  0.85f) player.position.y =  0.85f;
+
         const SwapchainFrame frame = acquire(device);
         if (!frame.render_view)
             continue;
+
         CommandBuffer* commands = begin_commands(device);
         begin_render_pass(commands, {
-            .colors = { { .render_view = frame.render_view, .load = LoadOp::clear } },
+            .colors = { { .render_view = frame.render_view, .load = LoadOp::clear, .clear = { 0.06f, 0.06f, 0.10f, 1.0f } } },
         });
+
         bind_pso(commands, triangle_pso);
-        draw(commands, {}, 3);
+        draw(commands, player, 3);
         end_render_pass(commands);
+
         latest_completion.value++;
         submit_and_present(device, { commands }, latest_completion);
     }

@@ -40,10 +40,9 @@ int main()
         .color = { 0.30f, 0.80f, 1.0f },
     };
 
-    const EntityRoot candle{
-        .position = { 0.35f, -0.20f },
-        .color = { 1.0f, 0.75f, 0.25f },
-    };
+    constexpr float2 candle_pos{ 0.35f, -0.20f };
+    bool candle_lit = true;
+    bool was_enter_down = false;
 
     constexpr float speed = 1.0f;
     double prev_time = example_time_seconds();
@@ -68,6 +67,25 @@ int main()
         if (player.position.x >  0.85f) player.position.x =  0.85f;
         if (player.position.y < -0.85f) player.position.y = -0.85f;
         if (player.position.y >  0.85f) player.position.y =  0.85f;
+        const float dx = player.position.x - candle_pos.x;
+        const float dy = player.position.y - candle_pos.y;
+        const bool in_range = (dx * dx + dy * dy) < (0.22f * 0.22f);
+
+        const bool enter_down = example_key_down(window, 0x0D /* VK_RETURN */);
+        if (in_range && enter_down && !was_enter_down)
+            candle_lit = !candle_lit;
+        was_enter_down = enter_down;
+
+        float3 candle_color;
+        if (candle_lit)
+            candle_color = in_range ? float3{ 1.20f, 0.95f, 0.50f } : float3{ 1.00f, 0.75f, 0.25f };
+        else
+            candle_color = in_range ? float3{ 0.40f, 0.20f, 0.15f } : float3{ 0.18f, 0.18f, 0.22f };
+
+        const EntityRoot candle{
+            .position = candle_pos,
+            .color = candle_color,
+        };
 
         const SwapchainFrame frame = acquire(device);
         if (!frame.render_view)

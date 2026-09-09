@@ -78,6 +78,12 @@ int main()
         if (in_range && enter_down && !was_enter_down)
             candle_lit = !candle_lit;
         was_enter_down = enter_down;
+        static bool was_f11_down = false;
+        const bool f11_down = example_key_down(window, 0x7A /* VK_F11 */);
+        if (f11_down && !was_f11_down)
+            example_toggle_fullscreen(window);
+        was_f11_down = f11_down;
+
 
         float3 candle_color;
         if (candle_lit)

@@ -88,6 +88,30 @@ bool example_key_down(void* window, int key) noexcept
         return false;
     return (GetAsyncKeyState(key) & 0x8000) != 0;
 }
+void example_toggle_fullscreen(void* window) noexcept
+{
+    HWND hwnd = static_cast<HWND>(window);
+    static bool is_fullscreen = false;
+    static RECT prev_rect{};
+    static DWORD prev_style = 0;
+
+    if (!is_fullscreen)
+    {
+        prev_style = static_cast<DWORD>(GetWindowLongPtrA(hwnd, GWL_STYLE));
+        GetWindowRect(hwnd, &prev_rect);
+        SetWindowLongPtrA(hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE);
+        SetWindowPos(hwnd, HWND_TOP, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), SWP_FRAMECHANGED);
+        is_fullscreen = true;
+    }
+    else
+    {
+        SetWindowLongPtrA(hwnd, GWL_STYLE, prev_style | WS_VISIBLE);
+        SetWindowPos(hwnd, nullptr, prev_rect.left, prev_rect.top,
+                     prev_rect.right - prev_rect.left, prev_rect.bottom - prev_rect.top, SWP_FRAMECHANGED);
+        is_fullscreen = false;
+    }
+}
+
 
 
 namespace

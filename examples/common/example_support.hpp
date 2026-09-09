@@ -12,6 +12,7 @@ bool read_binary_file(const char* path, gpu::Span<byte> data) noexcept;
 
 double example_time_seconds() noexcept;
 bool example_key_down(void* window, int key) noexcept;
+void example_toggle_fullscreen(void* window) noexcept;
 
 void* open_example_window(const char* title, uint32 width, uint32 height) noexcept;
 bool pump_example_window(void* window) noexcept;

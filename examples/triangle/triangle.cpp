@@ -1,5 +1,5 @@
-#include "triangle_shared.h"
 #include "example_support.hpp"
+#include "triangle_shared.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,7 +12,7 @@ int main()
     constexpr uint32 height = 600;
 
     void* window = open_example_window("Sol Eremus 2D", width, height);
-    Device* device = create_device({.window = window, .swapchain_format = Format::bgra8_srgb}).device;
+    Device* device = create_device({ .window = window, .swapchain_format = Format::bgra8_srgb }).device;
 
     if (!window || !device)
     {
@@ -25,11 +25,8 @@ int main()
 
     const Span<uint32> vertex_spirv = read_spirv(NOGRAPHICSAPI_VERTEX_SPV_PATH);
     const Span<uint32> fragment_spirv = read_spirv(NOGRAPHICSAPI_FRAGMENT_SPV_PATH);
-    PSO* triangle_pso = create_graphics_pso(device, {
-        .vertex_spirv = vertex_spirv,
-        .fragment_spirv = fragment_spirv,
-        .color_targets = { { .format = Format::bgra8_srgb } }
-    });
+    PSO* triangle_pso =
+        create_graphics_pso(device, { .vertex_spirv = vertex_spirv, .fragment_spirv = fragment_spirv, .color_targets = { { .format = Format::bgra8_srgb } } });
     free(fragment_spirv.data);
     free(vertex_spirv.data);
 
@@ -37,6 +34,7 @@ int main()
 
     EntityRoot player{
         .position = { 0.0f, 0.0f },
+        .scale = { 0.10f, 0.14f },
         .color = { 0.30f, 0.80f, 1.0f },
     };
 
@@ -51,7 +49,8 @@ int main()
     {
         const double current_time = example_time_seconds();
         float dt = static_cast<float>(current_time - prev_time);
-        if (dt > 0.1f) dt = 0.1f;
+        if (dt > 0.1f)
+            dt = 0.1f;
         prev_time = current_time;
 
         if (example_key_down(window, 'W') || example_key_down(window, 0x26 /* VK_UP */))
@@ -63,10 +62,14 @@ int main()
         if (example_key_down(window, 'D') || example_key_down(window, 0x27 /* VK_RIGHT */))
             player.position.x += speed * dt;
 
-        if (player.position.x < -0.85f) player.position.x = -0.85f;
-        if (player.position.x >  0.85f) player.position.x =  0.85f;
-        if (player.position.y < -0.85f) player.position.y = -0.85f;
-        if (player.position.y >  0.85f) player.position.y =  0.85f;
+        if (player.position.x < -0.85f)
+            player.position.x = -0.85f;
+        if (player.position.x > 0.85f)
+            player.position.x = 0.85f;
+        if (player.position.y < -0.85f)
+            player.position.y = -0.85f;
+        if (player.position.y > 0.85f)
+            player.position.y = 0.85f;
         const float dx = player.position.x - candle_pos.x;
         const float dy = player.position.y - candle_pos.y;
         const bool in_range = (dx * dx + dy * dy) < (0.22f * 0.22f);
@@ -84,6 +87,7 @@ int main()
 
         const EntityRoot candle{
             .position = candle_pos,
+            .scale = { 0.06f, 0.10f },
             .color = candle_color,
         };
 
@@ -92,17 +96,20 @@ int main()
             continue;
 
         CommandBuffer* commands = begin_commands(device);
-        begin_render_pass(commands, {
-            .colors = { { .render_view = frame.render_view, .load = LoadOp::clear, .clear = { 0.06f, 0.06f, 0.10f, 1.0f } } },
-        });
+        begin_render_pass(
+            commands,
+            {
+                .colors = { { .render_view = frame.render_view, .load = LoadOp::clear, .clear = { 0.06f, 0.06f, 0.10f, 1.0f } } },
+            }
+        );
 
         bind_pso(commands, triangle_pso);
 
         // Draw candle (amber)
-        draw(commands, candle, 3);
+        draw(commands, candle, 6);
 
         // Draw player (cyan)
-        draw(commands, player, 3);
+        draw(commands, player, 6);
 
         end_render_pass(commands);
 
